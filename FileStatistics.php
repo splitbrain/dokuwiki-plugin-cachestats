@@ -15,24 +15,14 @@ use SplFileInfo;
  *  - duplicate files (based on MD5 checksum) per file extension
  *  - size of files summed up per extension
  *  - number of files per extension grouped by last modified date
- *  - total number of files
- *  - total size of all files
  */
 class FileStatistics
 {
     private string $path;
 
-    /** @var string[] */
-    private array $buckets = ['<1d', '<1w', '<1m', '<3m', '<6m', '<1y', '>1y'];
+    private const BUCKETS = ['<1d', '<1w', '<1m', '<3m', '<6m', '<1y', '>1y'];
 
-    private array $stats = [
-        'extensions' => [],
-        'duplicates' => [],
-        'sizes' => [],
-        'modified_groups' => [],
-        'total_files' => 0,
-        'total_size' => 0,
-    ];
+    private array $result = [];
 
     private array $hashMap = []; // md5 => [ext, count]
 
@@ -59,23 +49,19 @@ class FileStatistics
                 continue;
             }
 
-            $this->stats['total_files']++;
             $ext = strtolower($fileInfo->getExtension()) ?: 'no_extension';
             $path = $fileInfo->getPathname();
             $size = $fileInfo->getSize();
             $mtime = $fileInfo->getMTime();
 
-            // size aggregated per extension
-            $this->stats['sizes'][$ext] = ($this->stats['sizes'][$ext] ?? 0) + $size;
-            $this->stats['total_size'] += $size;
+            $this->initExtension($ext);
 
-            // count per extension
-            $this->stats['extensions'][$ext] = ($this->stats['extensions'][$ext] ?? 0) + 1;
+            $this->result[$ext]['count']++;
+            $this->result[$ext]['size'] += $size;
 
             // group by modified time
             $group = $this->getModifiedGroup($now - $mtime);
-            $this->stats['modified_groups'][$ext][$group] =
-                ($this->stats['modified_groups'][$ext][$group] ?? 0) + 1;
+            $this->result[$ext][$group]++;
 
             // handle duplicates by checksum
             $md5 = md5_file($path);
@@ -89,12 +75,13 @@ class FileStatistics
         // summarize duplicates
         foreach ($this->hashMap as $hash => $info) {
             if ($info['count'] > 1) {
-                $this->stats['duplicates'][$info['ext']] =
-                    ($this->stats['duplicates'][$info['ext']] ?? 0) + ($info['count'] - 1);
+                $ext = $info['ext'];
+                $this->initExtension($ext);
+                $this->result[$ext]['dups'] += $info['count'] - 1;
             }
         }
 
-        return $this->buildResult();
+        return $this->result;
     }
 
     private function getModifiedGroup(int $ageSeconds): string
@@ -111,32 +98,19 @@ class FileStatistics
         };
     }
 
-    /**
-     * Combine collected sub statistics into a single result array keyed by extension
-     */
-    private function buildResult(): array
+    private function initExtension(string $ext): void
     {
-        $keys = array_unique(
-            array_merge(
-                array_keys($this->stats['extensions']),
-                array_keys($this->stats['sizes']),
-                array_keys($this->stats['duplicates']),
-                array_keys($this->stats['modified_groups'])
-            )
-        );
-
-        $result = [];
-        foreach ($keys as $key) {
-            $result[$key] = [
-                'count' => $this->stats['extensions'][$key] ?? 0,
-                'size' => $this->stats['sizes'][$key] ?? 0,
-                'dups' => $this->stats['duplicates'][$key] ?? 0,
-            ];
-            foreach ($this->buckets as $bucket) {
-                $result[$key][$bucket] = $this->stats['modified_groups'][$key][$bucket] ?? 0;
-            }
+        if (isset($this->result[$ext])) {
+            return;
         }
 
-        return $result;
+        $this->result[$ext] = [
+            'count' => 0,
+            'size' => 0,
+            'dups' => 0,
+        ];
+        foreach (self::BUCKETS as $bucket) {
+            $this->result[$ext][$bucket] = 0;
+        }
     }
 }

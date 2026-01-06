@@ -12,12 +12,15 @@ use splitbrain\phpcli\TableFormatter;
  */
 class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
 {
+    /** @var string[] */
+    private array $buckets = ['<1d', '<1w', '<1m', '<3m', '<6m', '<1y', '>1y'];
+
     /** @inheritDoc */
     protected function setup(Options $options)
     {
         $options->setHelp('Collect statistics about the cache directory.');
 
-        $options->registerOption('json', 'Output results in JSON format', 'j', false);
+        $options->registerOption('format', 'Output format: table|json|csv', 'f', 'table');
         $options->registerOption('sort', 'Sort by count|size|dups', 's', false);
     }
 
@@ -32,7 +35,13 @@ class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
             return 1;
         }
 
-        if ($options->getOpt('json')) {
+        $format = $options->getOpt('format', 'table');
+        if (!in_array($format, ['table', 'json', 'csv'])) {
+            $this->error("Invalid format option '$format'. Allowed are: table, json, csv.");
+            return 1;
+        }
+
+        if ($format === 'json') {
             fprintf(STDERR, 'Collecting cache statistics from ' . $conf['cachedir'] . "…\n");
         } else {
             $this->info('Collecting cache statistics from ' . $conf['cachedir'] . '…');
@@ -52,10 +61,15 @@ class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
         );
         $result = [];
         foreach ($keys as $key) {
+            $modified = [];
+            foreach ($this->buckets as $bucket) {
+                $modified[$bucket] = $stats['modified_groups'][$key][$bucket] ?? 0;
+            }
             $result[$key] = [
                 'count' => $stats['extensions'][$key] ?? 0,
                 'size' => $stats['sizes'][$key] ?? 0,
                 'dups' => $stats['duplicates'][$key] ?? 0,
+                'modified' => $modified,
             ];
         }
 
@@ -64,31 +78,85 @@ class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
             return $b[$sort] <=> $a[$sort];
         });
 
-        if ($options->getOpt('json')) {
-            echo json_encode($result, JSON_PRETTY_PRINT);
-            return 0;
+        match ($format) {
+            'json' => $this->print_json($result),
+            'csv' => $this->print_csv($result),
+            default => $this->print_table($result),
+        };
+        return 0;
+    }
+
+    /**
+     * Output statistics as JSON
+     */
+    private function print_json(array $result): void
+    {
+        echo json_encode($result, JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Output statistics as CSV
+     */
+    private function print_csv(array $result): void
+    {
+        $handle = fopen('php://output', 'w');
+        if ($handle === false) {
+            $this->error('Could not open output for CSV.');
+            return;
         }
 
+        $header = array_merge(
+            ['extension', 'count', 'total_size_bytes', 'duplicate_files'],
+            $this->buckets
+        );
+        fputcsv($handle, $header);
+
+        foreach ($result as $ext => $data) {
+            $row = [
+                $ext,
+                $data['count'],
+                $data['size'],
+                $data['dups']
+            ];
+            foreach ($this->buckets as $bucket) {
+                $row[] = $data['modified'][$bucket];
+            }
+            fputcsv($handle, $row);
+        }
+    }
+
+    /**
+     * Output statistics as table
+     */
+    private function print_table(array $result): void
+    {
         $tr = new TableFormatter($this->colors);
-        echo $tr->format(
-            ['*', 10, 10, 10],
+        $columns = array_merge(['*', 7, 10, 7], array_fill(0, count($this->buckets), 5));
+        $headers = array_merge(
             ['Extension', 'File Count', 'Total Size (bytes)', 'Duplicate Files'],
+            $this->buckets
+        );
+        echo $tr->format(
+            $columns,
+            $headers,
             ['', '', '', '']
         );
 
         foreach ($result as $ext => $data) {
+            $row = [
+                $ext,
+                sprintf("% 7s", number_format($data['count'])),
+                sprintf("% 10s", filesize_h($data['size'])),
+                sprintf("% 7s", number_format($data['dups']))
+            ];
+            foreach ($this->buckets as $bucket) {
+                $row[] = sprintf("% 5s", number_format($data['modified'][$bucket]));
+            }
             echo $tr->format(
-                ['*', 10, 10, 10],
-                [
-                    $ext,
-                    sprintf("% 10s", number_format($data['count'])),
-                    sprintf("% 10s", filesize_h($data['size'])),
-                    sprintf("% 10s", number_format($data['dups']))
-                ],
+                $columns,
+                $row,
                 ['', '', '', '']
             );
         }
-
-        return 0;
     }
 }

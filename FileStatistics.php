@@ -22,6 +22,9 @@ class FileStatistics
 {
     private string $path;
 
+    /** @var string[] */
+    private array $buckets = ['<1d', '<1w', '<1m', '<3m', '<6m', '<1y', '>1y'];
+
     private array $stats = [
         'extensions' => [],
         'duplicates' => [],
@@ -91,7 +94,7 @@ class FileStatistics
             }
         }
 
-        return $this->stats;
+        return $this->buildResult();
     }
 
     private function getModifiedGroup(int $ageSeconds): string
@@ -107,5 +110,33 @@ class FileStatistics
             default => '>1y',
         };
     }
-}
 
+    /**
+     * Combine collected sub statistics into a single result array keyed by extension
+     */
+    private function buildResult(): array
+    {
+        $keys = array_unique(
+            array_merge(
+                array_keys($this->stats['extensions']),
+                array_keys($this->stats['sizes']),
+                array_keys($this->stats['duplicates']),
+                array_keys($this->stats['modified_groups'])
+            )
+        );
+
+        $result = [];
+        foreach ($keys as $key) {
+            $result[$key] = [
+                'count' => $this->stats['extensions'][$key] ?? 0,
+                'size' => $this->stats['sizes'][$key] ?? 0,
+                'dups' => $this->stats['duplicates'][$key] ?? 0,
+            ];
+            foreach ($this->buckets as $bucket) {
+                $result[$key][$bucket] = $this->stats['modified_groups'][$key][$bucket] ?? 0;
+            }
+        }
+
+        return $result;
+    }
+}

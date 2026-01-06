@@ -12,9 +12,6 @@ use splitbrain\phpcli\TableFormatter;
  */
 class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
 {
-    /** @var string[] */
-    private array $buckets = ['<1d', '<1w', '<1m', '<3m', '<6m', '<1y', '>1y'];
-
     /** @inheritDoc */
     protected function setup(Options $options)
     {
@@ -47,29 +44,7 @@ class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
             $this->info('Collecting cache statistics from ' . $conf['cachedir'] . '…');
         }
 
-        $stats = (new FileStatistics($conf['cachedir']))->collect();
-
-        // for debugging
-        print_r($stats);
-
-        $keys = array_unique(
-            array_merge(
-                array_keys($stats['extensions']),
-                array_keys($stats['sizes']),
-                array_keys($stats['duplicates'])
-            )
-        );
-        $result = [];
-        foreach ($keys as $key) {
-            $result[$key] = [
-                'count' => $stats['extensions'][$key] ?? 0,
-                'size' => $stats['sizes'][$key] ?? 0,
-                'dups' => $stats['duplicates'][$key] ?? 0,
-            ];
-            foreach ($this->buckets as $bucket) {
-                $result[$key][$bucket] = $stats['modified_groups'][$key][$bucket] ?? 0;
-            }
-        }
+        $result = (new FileStatistics($conf['cachedir']))->collect();
 
         // sort with preserved keys
         uasort($result, function ($a, $b) use ($sort) {

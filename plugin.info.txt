@@ -1,8 +1,8 @@
 base   cachestats
 author Andreas Gohr
 email  andi@splitbrain.org
-date   2025-12-11
+date   2026-01-06
 name   cachestats plugin
-desc   Display statistics about the cache
+desc   Gather statistics about the cache
 url    https://www.dokuwiki.org/plugin:cachestats
 phpmin 8.0

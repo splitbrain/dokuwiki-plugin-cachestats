@@ -8,13 +8,8 @@ use RecursiveIteratorIterator;
 use SplFileInfo;
 
 /**
- * Class FileStatistics
- *
- * Recursively scans a directory and collects:
- *  - number of files per file extension
- *  - duplicate files (based on MD5 checksum) per file extension
- *  - size of files summed up per extension
- *  - number of files per extension grouped by last modified date
+ * Recursively scans a directory and builds cache statistics keyed by extension.
+ * Data includes counts, total size, duplicate counts, and age buckets.
  */
 class FileStatistics
 {
@@ -26,6 +21,9 @@ class FileStatistics
 
     private array $hashMap = []; // md5 => [ext, count]
 
+    /**
+     * @param string $path Absolute path to the cache directory
+     */
     public function __construct(string $path)
     {
         if (!is_dir($path)) {
@@ -35,6 +33,11 @@ class FileStatistics
         $this->path = rtrim($path, DIRECTORY_SEPARATOR);
     }
 
+    /**
+     * Walk the directory tree and return statistics keyed by extension.
+     *
+     * @return array<string, array>
+     */
     public function collect(): array
     {
         $iterator = new RecursiveIteratorIterator(
@@ -84,6 +87,11 @@ class FileStatistics
         return $this->result;
     }
 
+    /**
+     * Map file age to a human-friendly bucket label.
+     *
+     * @param int $ageSeconds Age in seconds since last modification
+     */
     private function getModifiedGroup(int $ageSeconds): string
     {
         $day = 86400;
@@ -98,6 +106,11 @@ class FileStatistics
         };
     }
 
+    /**
+     * Ensure an extension has all expected keys initialized.
+     *
+     * @param string $ext Lowercased file extension (or 'no_extension')
+     */
     private function initExtension(string $ext): void
     {
         if (isset($this->result[$ext])) {

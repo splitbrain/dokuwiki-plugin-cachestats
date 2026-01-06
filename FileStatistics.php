@@ -36,23 +36,26 @@ class FileStatistics
     /**
      * Walk the directory tree and return statistics keyed by extension.
      *
+     * @param callable<int,SplFileInfo>|null $cb Optional callback to report progress
      * @return array<string, array>
      */
-    public function collect(): array
+    public function collect(?callable $cb = null): array
     {
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($this->path, RecursiveDirectoryIterator::SKIP_DOTS)
         );
 
         $now = time();
-
+        $counter = 0;
         foreach ($iterator as $fileInfo) {
             /** @var SplFileInfo $fileInfo */
             if (!$fileInfo->isFile()) {
                 continue;
             }
 
-            $ext = strtolower($fileInfo->getExtension()) ?: 'no_extension';
+            if($cb) $cb(++$counter, $fileInfo);
+
+            $ext = strtolower($fileInfo->getExtension()) ?: '-';
             $path = $fileInfo->getPathname();
             $size = $fileInfo->getSize();
             $mtime = $fileInfo->getMTime();

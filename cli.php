@@ -17,8 +17,9 @@ class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
     {
         $options->setHelp('Collect statistics about the cache directory.');
 
-        $options->registerOption('format', 'Output format: table|json|csv', 'f', 'table');
-        $options->registerOption('sort', 'Sort by count|size|dups', 's', false);
+        $options->registerOption('noprogress', 'Don\'t show progress dots');
+        $options->registerOption('format', 'Output format. Defaults to table.', 'f', 'table|json|csv');
+        $options->registerOption('sort', 'Sort by this criteria. Defaults to size.', 's', 'count|size|dups');
     }
 
     /** @inheritDoc */
@@ -38,13 +39,22 @@ class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
             return 1;
         }
 
-        if ($format === 'json') {
-            fprintf(STDERR, 'Collecting cache statistics from ' . $conf['cachedir'] . "…\n");
+        // progress report - collecting stats can take a while
+        fprintf(STDERR, 'Collecting cache statistics from ' . $conf['cachedir'] . "…\n");
+        if(!$options->getOpt('noprogress')) {
+            $cb = function($count) {
+                if ($count % 50000 === 0) {
+                    fprintf(STDERR, "%s files processed\n", number_format($count));
+                } elseif ($count % 1000 === 0) {
+                    fprintf(STDERR, ".");
+                }
+            };
         } else {
-            $this->info('Collecting cache statistics from ' . $conf['cachedir'] . '…');
+            $cb = null;
         }
 
-        $result = (new FileStatistics($conf['cachedir']))->collect();
+        $result = (new FileStatistics($conf['cachedir']))->collect($cb);
+        if($cb) fprintf(STDERR, "\n");
 
         // sort with preserved keys
         uasort($result, function ($a, $b) use ($sort) {

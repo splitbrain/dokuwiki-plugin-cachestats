@@ -61,16 +61,14 @@ class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
         );
         $result = [];
         foreach ($keys as $key) {
-            $modified = [];
-            foreach ($this->buckets as $bucket) {
-                $modified[$bucket] = $stats['modified_groups'][$key][$bucket] ?? 0;
-            }
             $result[$key] = [
                 'count' => $stats['extensions'][$key] ?? 0,
                 'size' => $stats['sizes'][$key] ?? 0,
                 'dups' => $stats['duplicates'][$key] ?? 0,
-                'modified' => $modified,
             ];
+            foreach ($this->buckets as $bucket) {
+                $result[$key][$bucket] = $stats['modified_groups'][$key][$bucket] ?? 0;
+            }
         }
 
         // sort with preserved keys
@@ -105,23 +103,11 @@ class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
             return;
         }
 
-        $header = array_merge(
-            ['extension', 'count', 'total_size_bytes', 'duplicate_files'],
-            $this->buckets
-        );
+        $header = array_merge(['extension'], array_keys(reset($result)));
         fputcsv($handle, $header);
 
         foreach ($result as $ext => $data) {
-            $row = [
-                $ext,
-                $data['count'],
-                $data['size'],
-                $data['dups']
-            ];
-            foreach ($this->buckets as $bucket) {
-                $row[] = $data['modified'][$bucket];
-            }
-            fputcsv($handle, $row);
+            fputcsv($handle, array_merge([$ext], $data));
         }
     }
 
@@ -130,32 +116,33 @@ class cli_plugin_cachestats extends \dokuwiki\Extension\CLIPlugin
      */
     private function print_table(array $result): void
     {
+        $colWidth = 9;
+
+        $headers = array_merge(['ext'], array_keys(reset($result)));
+        $widths = array_merge(['*'], array_fill(0, count($headers) -1, $colWidth));
+        $colors = array_fill(0, count($headers), '');
+
+        // ensure terminal is wide enough, otherwise break ugly
         $tr = new TableFormatter($this->colors);
-        $columns = array_merge(['*', 7, 10, 7], array_fill(0, count($this->buckets), 5));
-        $headers = array_merge(
-            ['Extension', 'File Count', 'Total Size (bytes)', 'Duplicate Files'],
-            $this->buckets
-        );
-        echo $tr->format(
-            $columns,
-            $headers,
-            ['', '', '', '']
-        );
+        if($tr->getMaxWidth() < $colWidth * count($headers)){;
+            $tr->setMaxWidth($colWidth * count($headers) + 10);
+        }
+
+        echo $tr->format($widths, $headers, $colors);
 
         foreach ($result as $ext => $data) {
-            $row = [
-                $ext,
-                sprintf("% 7s", number_format($data['count'])),
-                sprintf("% 10s", filesize_h($data['size'])),
-                sprintf("% 7s", number_format($data['dups']))
-            ];
-            foreach ($this->buckets as $bucket) {
-                $row[] = sprintf("% 5s", number_format($data['modified'][$bucket]));
-            }
+            array_walk(
+                $data,
+                fn (&$v, $k) => $v = sprintf(
+                    "% ${colWidth}s",
+                    ($k == 'size') ? filesize_h($v) : number_format($v)
+                )
+            );
+
             echo $tr->format(
-                $columns,
-                $row,
-                ['', '', '', '']
+                $widths,
+                array_merge([$ext], array_values($data)),
+                $colors
             );
         }
     }
